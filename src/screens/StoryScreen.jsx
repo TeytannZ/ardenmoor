@@ -549,6 +549,16 @@ function bgKey(bgObj) {
   return Object.keys(BG).find(k => BG[k] === bgObj) || 'archive_night'
 }
 
+// Preload a background image silently so the browser has it cached by the time
+// changeScene applies it — eliminates the white/black flash on scene transitions.
+function preloadBgImage(bgObj) {
+  if (!bgObj?.src) return
+  const a = new Image(); a.src = _abs(bgObj.src)
+  if (bgObj.fallback && bgObj.fallback !== bgObj.src) {
+    const b = new Image(); b.src = _abs(bgObj.fallback)
+  }
+}
+
 // ─── Scene alive effects ──────────────────────────────────────────────────────
 // Canvas-based dust, embers, and smoke; CSS-based fog and lamplight
 function _makeDust(w, h, cr, cg, cb) {
@@ -1448,6 +1458,10 @@ export default function StoryScreen({ appState, navigate }) {
       ? { ...baseBG, ...baseBG.angles[bgAngle] }
       : baseBG
     changeScene(newBase)
+    // Preload the next scene's background while this one plays so it's already
+    // in the browser's image cache when changeScene is called for it.
+    const upcoming = BEATS.slice(beatIdx + 1, beatIdx + 8).find(b => b?.bg && b.bg !== beat.bg)
+    if (upcoming?.bg) preloadBgImage(upcoming.bg)
   }, [beatIdx, reaction?.idx]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Portrait staging ──────────────────────────────────────────────────────
@@ -1524,6 +1538,12 @@ export default function StoryScreen({ appState, navigate }) {
     const beat = reaction ? reaction.beats[reaction.idx] : BEATS[beatIdx]
     if (!beat?.voFile) return
     AudioManager.playVO(beat.voFile)
+    // Preload the next beat's VO while the current one plays so it's buffered
+    // when playVO is called for it — eliminates audio pop/silence on transition.
+    const nextBeat = reaction ? reaction.beats[reaction.idx + 1] : BEATS[beatIdx + 1]
+    if (nextBeat?.voFile && nextBeat.voFile !== beat.voFile) {
+      AudioManager.preloadVO(nextBeat.voFile)
+    }
   }, [beatIdx, reaction?.idx]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Save progress (main mode only — sparks/epochs/revisit are ephemeral) ───

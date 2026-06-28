@@ -139,8 +139,9 @@ class AudioManagerClass {
   addAmbient(filename) {
     const gain  = AMBIENT_GAINS[filename] ?? 1.0
     const track = new Audio(AudioPaths.ambient(filename))
-    track.loop   = true
-    track.volume = this._trackVol(gain)
+    track.loop    = true
+    track.preload = 'auto'   // buffer full file so playback starts without lag
+    track.volume  = this._trackVol(gain)
     this._tryPlay(track)
     this._ambient.push({ track, gain })
     return track
@@ -159,8 +160,9 @@ class AudioManagerClass {
     if (!filename) return null
     const gain  = AMBIENT_GAINS[filename] ?? 1.0
     const track = new Audio(AudioPaths.ambient(filename))
-    track.loop   = true
-    track.volume = 0
+    track.loop    = true
+    track.preload = 'auto'
+    track.volume  = 0
     this._tryPlay(track)
     this._ambient.push({ track, gain })
     this._fadeIn(track, this._trackVol(gain), fadeDuration)
@@ -184,10 +186,26 @@ class AudioManagerClass {
    * @param {string} filename
    * @param {function} onEnd  callback when VO finishes
    */
+  // Pre-buffer a VO file without playing it yet — call while the current beat is
+  // still playing so the next beat's audio is ready when it starts.
+  preloadVO(filename) {
+    if (!filename) return
+    const url = AudioPaths.vo(filename)
+    if (this._voPreload?.src?.endsWith(url.split('/').pop())) return // already loading this one
+    const pre = new Audio(url)
+    pre.preload = 'auto'
+    pre.volume  = 0
+    this._voPreload = pre
+  }
+
   playVO(filename, onEnd = null) {
     this.stopVO()
-    const vo = new Audio(AudioPaths.vo(filename))
-    vo.volume = this._muted ? 0 : this._voVolume
+    // Reuse the preloaded element if it matches — avoids a redundant network request
+    const url = AudioPaths.vo(filename)
+    const vo = (this._voPreload?.src && this._voPreload.src === url) ? this._voPreload : new Audio(url)
+    this._voPreload = null
+    vo.preload = 'auto'
+    vo.volume  = this._muted ? 0 : this._voVolume
     if (onEnd) vo.addEventListener('ended', onEnd, { once: true })
     vo.play().catch(err => {
       if (err.name !== 'AbortError') console.warn('[AudioManager] VO play failed:', err)
